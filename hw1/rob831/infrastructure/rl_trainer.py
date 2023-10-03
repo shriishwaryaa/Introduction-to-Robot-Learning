@@ -17,7 +17,7 @@ MAX_NVIDEO = 2
 
 def make_env(env_name):
     if env_name == 'Ant-v2':
-        return gym.make(env_name, use_contact_forces=True)
+        return gym.make(env_name)
     else:
         return gym.make(env_name)
 
@@ -168,6 +168,9 @@ class RL_Trainer(object):
         # HINT: depending on if it's the first iteration or not, decide whether to either
         # (1) load the data. In this case you can directly return as follows
         # ``` return loaded_paths, 0, None ```
+        if itr == 0:
+            loaded_paths = pickle.load(open(load_initial_expertdata, 'rb'))
+            return loaded_paths, 0, None
 
         # (2) collect `self.params['batch_size']` transitions
 
@@ -175,7 +178,7 @@ class RL_Trainer(object):
         # HINT1: use sample_trajectories from utils
         # HINT2: you want each of these collected rollouts to be of length self.params['ep_len']
         print("\nCollecting data to be used for training...")
-        paths, envsteps_this_batch = TODO
+        paths, envsteps_this_batch = utils.sample_trajectories(self.env, collect_policy, self.params['batch_size'], self.params['ep_len'])
 
         # collect more rollouts with the same policy, to be saved as videos in tensorboard
         # note: here, we collect MAX_NVIDEO rollouts, each of length MAX_VIDEO_LEN
@@ -196,12 +199,12 @@ class RL_Trainer(object):
             # TODO sample some data from the data buffer
             # HINT1: use the agent's sample function
             # HINT2: how much data = self.params['train_batch_size']
-            ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch = TODO
+            ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch = self.agent.sample(self.params['train_batch_size'])
 
             # TODO use the sampled data to train an agent
             # HINT: use the agent's train function
             # HINT: keep the agent's training log for debugging
-            train_log = TODO
+            train_log = self.agent.train(ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch)
             all_logs.append(train_log)
         return all_logs
 
@@ -211,6 +214,8 @@ class RL_Trainer(object):
         # TODO relabel collected obsevations (from our policy) with labels from an expert policy
         # HINT: query the policy (using the get_action function) with paths[i]["observation"]
         # and replace paths[i]["action"] with these expert labels
+        for path in paths:
+            path["action"] = expert_policy.get_action(path["observation"])
 
         return paths
 
@@ -241,10 +246,10 @@ class RL_Trainer(object):
             train_returns = [path["reward"].sum() for path in paths]
             eval_returns = [eval_path["reward"].sum() for eval_path in eval_paths]
 
-            # episode lengths, for logging
+            # episode lengths, for log
             train_ep_lens = [len(path["reward"]) for path in paths]
             eval_ep_lens = [len(eval_path["reward"]) for eval_path in eval_paths]
-
+  
             # decide what to log
             logs = OrderedDict()
             logs["Eval_AverageReturn"] = np.mean(eval_returns)
@@ -267,7 +272,9 @@ class RL_Trainer(object):
 
             if itr == 0:
                 self.initial_return = np.mean(train_returns)
+                self.initial_std_return = np.std(train_returns)
             logs["Initial_DataCollection_AverageReturn"] = self.initial_return
+            logs["Initial_DataCollection_StdReturn"] = self.initial_std_return
 
             # perform the logging
             for key, value in logs.items():
